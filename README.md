@@ -25,6 +25,7 @@ WorldCurrency es una aplicación Android desarrollada en Kotlin que permite conv
 ##  Para Mejorar
 
   - Historial por fecha	Mostrar agrupado por día / semana o con filtro temporal
+  - Poder eliminar una conversion
   - Undo al borrar	Snackbar con "deshacer" al eliminar una conversión
   - Comparativa de tasas	Mostrar gráfica simple del cambio de valor en el tiempo (línea de tendencia)
   - Tests unitarios + UI	Pruebas de ViewModel, UseCases y UI con Compose Testing y MockK
