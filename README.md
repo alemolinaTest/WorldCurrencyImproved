@@ -41,6 +41,58 @@ Sin datos locales → muestra mensaje "sin conversiones
 - **DI**: Hilt
 - **Estados**: StateFlow
 
+## Instrucciones para correr el proyecto
+## Requisitos previos
+Antes de ejecutar la app, asegurate de tener instalado:
+
+Android Studio Giraffe o superior
+
+JDK 17
+
+Kotlin 1.9.0 o superior
+
+Conexión a Internet (la app usa una API externa para tasas de cambio)
+
+Un emulador o dispositivo físico con Android 8.0 (API 26) o superior
+
+## Pasos para ejecución
+Clonar el repositorio:
+
+bash
+Copy
+Edit
+git clone https://github.com/tuusuario/worldcurrency.git
+cd worldcurrency
+Abrir en Android Studio:
+
+Ir a File > Open y seleccionar la carpeta del proyecto
+
+Esperar la sincronización de Gradle
+
+Compilar y ejecutar:
+
+Conectá un dispositivo físico o iniciá un emulador
+
+Hacé clic en  (Run 'app') para compilar y lanzar la app
+
+## Consideraciones
+El proyecto utiliza la API pública de ExchangeRate.host.
+
+Las conversiones se almacenan en una base de datos local (Room).
+
+Si hay problemas de red, se intenta usar las últimas tasas almacenadas.
+
+El campo de monto solo acepta números con hasta 2 decimales.
+
+## Tips de solución rápida
+Si aparecen errores de compilación, ejecutá:
+
+Build > Clean Project
+
+File > Invalidate Caches / Restart
+
+Verificá que tu archivo AppModule.kt tenga la BASE_URL correcta.
+
 ##  Para Mejorar
 
   - Historial por fecha	Mostrar agrupado por día / semana o con filtro temporal
