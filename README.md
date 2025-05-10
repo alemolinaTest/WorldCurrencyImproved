@@ -2,6 +2,25 @@
 
 WorldCurrency es una aplicación Android desarrollada en Kotlin que permite convertir montos entre diferentes monedas en tiempo real, consultar el historial de conversiones y ver detalles de cada transacción.
 
+## Como Usar la app.
+
+ Funcionalidad  | Pasos                                        
+| ------------- | -------------------------------------------- |
+| Conversión    | Elegí monedas, ingresá monto, presiona "Convert" |
+| Historial     | Presiona "View History"                          |
+| Detalle       | Presiona un item del historial                   |
+| Borrado       | Presiona el ícono de papelera                    |
+
+## Manejo de Errores:
+
+Red caída → muestra mensaje y botón "Retry"
+
+Selección o monto inválido → muestra alerta clara
+
+API caída → muestra error genérico
+
+Sin datos locales → muestra mensaje "sin conversiones
+
 ## Características
 
 - Ingreso de monto con validación y soporte de hasta 2 decimales.
