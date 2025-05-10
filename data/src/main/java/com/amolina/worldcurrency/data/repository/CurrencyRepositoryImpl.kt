@@ -2,17 +2,23 @@ package com.amolina.worldcurrency.data.repository
 
 import android.util.Log
 import com.amolina.worldcurrency.data.di.IoDispatcher
+import com.amolina.worldcurrency.data.local.room.dao.ConversionDao
 import com.amolina.worldcurrency.data.local.room.dao.CurrencyDao
 import com.amolina.worldcurrency.data.local.room.entity.CurrencyRateEntity
+import com.amolina.worldcurrency.data.local.room.entity.toDomain
+import com.amolina.worldcurrency.data.local.room.entity.toEntity
 import com.amolina.worldcurrency.data.remote.api.ApiService
+import com.amolina.worldcurrency.domain.model.Conversion
 import com.amolina.worldcurrency.domain.model.Currency
 import com.amolina.worldcurrency.domain.repository.CurrencyRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 
+
 class CurrencyRepositoryImpl(
     private val api: ApiService,
     private val dao: CurrencyDao,
+    private val conversionDao: ConversionDao,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : CurrencyRepository {
 
@@ -24,10 +30,10 @@ class CurrencyRepositoryImpl(
             val currenciesResponse = api.getCurrencies() // /list
             val latestRates = api.getLatestRates()     // /live
 
-            val base = latestRates.source // should be "USD"
+            val base = latestRates.source // "USD"
 
             val entities = latestRates.quotes.mapNotNull { (pairCode, rate) ->
-                // Extract currency code by removing the "USD" prefix
+                // removing the "USD" prefix
                 if (pairCode.startsWith(base)) {
                     val code = pairCode.removePrefix(base)
                     val name = currenciesResponse.currencies[code] ?: return@mapNotNull null
@@ -68,6 +74,12 @@ class CurrencyRepositoryImpl(
 
             return@withContext (amount / fromRate) * toRate
         }
+
+    override suspend fun saveConversion(entity: Conversion) = conversionDao.insert(entity.toEntity())
+
+    override suspend fun getConversionHistory(): List<Conversion> = conversionDao.getAll().map { it.toDomain() }
+
+    override suspend fun getConversionById(id: Long): Conversion = conversionDao.getById(id).toDomain()
 
     private fun CurrencyRateEntity.toDomain(): Currency =
         Currency(code = code, name = name, rate = rate)

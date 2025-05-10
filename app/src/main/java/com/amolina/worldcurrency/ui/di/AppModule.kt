@@ -4,6 +4,9 @@ import com.amolina.worldcurrency.data.remote.api.ApiService
 import com.amolina.worldcurrency.domain.repository.CurrencyRepository
 import com.amolina.worldcurrency.domain.usecase.ConvertCurrencyUseCase
 import com.amolina.worldcurrency.domain.usecase.GetAvailableCurrenciesUseCase
+import com.amolina.worldcurrency.domain.usecase.GetConversionByIdUseCase
+import com.amolina.worldcurrency.domain.usecase.GetConversionHistoryUseCase
+import com.amolina.worldcurrency.domain.usecase.SaveConversionUseCase
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
@@ -23,7 +26,7 @@ import retrofit2.Retrofit
 object AppModule {
 
     private const val BASE_URL = "https://api.exchangerate.host/"
-    private const val API_KEY = "05271ae76c6a42c960ed024920d5a818" // ✅ Fixed newline
+    private const val API_KEY = "05271ae76c6a42c960ed024920d5a818"
 
     @Provides
     @Singleton
@@ -69,4 +72,17 @@ object AppModule {
     @Provides
     fun provideConvertCurrencyUseCase(repository: CurrencyRepository): ConvertCurrencyUseCase =
         ConvertCurrencyUseCase(repository)
+
+    @Provides
+    fun provideSaveConversionUseCase(repository: CurrencyRepository): SaveConversionUseCase =
+        SaveConversionUseCase(repository)
+
+    @Provides
+    fun provideGetConversionHistoryUseCase(repository: CurrencyRepository): GetConversionHistoryUseCase =
+        GetConversionHistoryUseCase(repository)
+
+    @Provides
+    fun provideGetConversionByIdUseCase(repository: CurrencyRepository): GetConversionByIdUseCase =
+        GetConversionByIdUseCase(repository)
+
 }
