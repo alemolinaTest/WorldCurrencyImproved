@@ -22,7 +22,7 @@ WorldCurrency es una aplicación Android desarrollada en Kotlin que permite conv
 - **DI**: Hilt
 - **Estados**: StateFlow
 
-- a Mejorar:
+##  Para Mejorar
 
   Historial por fecha	Mostrar agrupado por día / semana o con filtro temporal
   Undo al borrar	Snackbar con "deshacer" al eliminar una conversión
