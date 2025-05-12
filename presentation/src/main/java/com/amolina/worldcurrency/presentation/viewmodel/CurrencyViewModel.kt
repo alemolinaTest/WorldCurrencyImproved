@@ -6,14 +6,17 @@ import com.amolina.worldcurrency.domain.model.Conversion
 import com.amolina.worldcurrency.domain.usecase.ConvertCurrencyUseCase
 import com.amolina.worldcurrency.domain.usecase.GetAvailableCurrenciesUseCase
 import com.amolina.worldcurrency.domain.usecase.SaveConversionUseCase
+import com.amolina.worldcurrency.domain.util.Resource
 import com.amolina.worldcurrency.presentation.ui.event.CurrencyUiEvent
+import com.amolina.worldcurrency.presentation.ui.mapper.ErrorMapper.toCurrencyUiError
+import com.amolina.worldcurrency.presentation.ui.state.CurrencyUiData
 import com.amolina.worldcurrency.presentation.ui.state.CurrencyUiState
+import com.amolina.worldcurrency.presentation.ui.state.ErrorType
 import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @HiltViewModel
 class CurrencyViewModel @Inject constructor(
@@ -22,7 +25,7 @@ class CurrencyViewModel @Inject constructor(
     private val saveConversion: SaveConversionUseCase
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(CurrencyUiState())
+    private val _state = MutableStateFlow<CurrencyUiState>(CurrencyUiState.Loading)
     val state: StateFlow<CurrencyUiState> = _state
 
     init {
@@ -30,82 +33,118 @@ class CurrencyViewModel @Inject constructor(
     }
 
     fun onEvent(event: CurrencyUiEvent) {
+        val current = (_state.value as? CurrencyUiState.Success)?.data
+
         when (event) {
-            is CurrencyUiEvent.OnAmountChanged ->
-                _state.update { it.copy(amount = event.value, error = null) }
-
-            is CurrencyUiEvent.OnFromCurrencySelected ->
-                _state.update {
-                    val currency = it.availableCurrencies.find { c -> c.code == event.code }
-                    it.copy(selectedFrom = currency, error = null)
+            is CurrencyUiEvent.OnAmountChanged -> {
+                if (current != null) {
+                    updateState(current.copy(amount = event.value))
                 }
+            }
 
-            is CurrencyUiEvent.OnToCurrencySelected ->
-                _state.update {
-                    val currency = it.availableCurrencies.find { c -> c.code == event.code }
-                    it.copy(selectedTo = currency, error = null)
+            is CurrencyUiEvent.OnFromCurrencySelected -> {
+                val selected = current?.availableCurrencies?.find { it.code == event.code }
+                if (current != null && selected != null) {
+                    updateState(current.copy(selectedFrom = selected))
                 }
+            }
 
-            CurrencyUiEvent.OnConvert -> convert()
+            is CurrencyUiEvent.OnToCurrencySelected -> {
+                val selected = current?.availableCurrencies?.find { it.code == event.code }
+                if (current != null && selected != null) {
+                    updateState(current.copy(selectedTo = selected))
+                }
+            }
+
+            CurrencyUiEvent.OnConvert -> {
+                if (current != null) convert(current)
+            }
         }
     }
 
     private fun loadCurrencies() {
+        _state.value = CurrencyUiState.Loading
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
-            try {
-                val currencies = getCurrencies()
-                _state.update { it.copy(isLoading = false, availableCurrencies = currencies) }
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(isLoading = false, error = e.message ?: "Unknown error")
+            when (val result = getCurrencies()) {
+                is Resource.Success -> {
+                    val data = CurrencyUiData(
+                        availableCurrencies = result.data,
+                        isFromCache = result.isFromCache
+                    )
+                    _state.value = CurrencyUiState.Success(data)
+                }
+
+                is Resource.Error -> {
+                    _state.value = toCurrencyUiError(result.exception)
+                }
+
+                Resource.Loading -> {
+                    _state.value = CurrencyUiState.Loading
                 }
             }
         }
     }
 
-    private fun convert() {
+    private fun convert(current: CurrencyUiData) {
         viewModelScope.launch {
-            val current = _state.value
-
-            if (current.selectedFrom == null || current.selectedTo == null) {
-                _state.update { it.copy(error = "Select both currencies") }
-                return@launch
-            }
-
             val amount = current.amount.toDoubleOrNull()
             if (amount == null) {
-                _state.update { it.copy(error = "Invalid amount") }
+                _state.value = CurrencyUiState.Error("Invalid amount", ErrorType.VALIDATION)
                 return@launch
             }
 
-            _state.update { it.copy(isLoading = true, error = null) }
+            if (current.selectedFrom == null || current.selectedTo == null) {
+                _state.value = CurrencyUiState.Error("Select both currencies", ErrorType.VALIDATION)
+                return@launch
+            }
 
-            try {
-                val result = convertCurrency(amount, current.selectedFrom.code, current.selectedTo.code)
+            _state.value = CurrencyUiState.Loading
 
-                val rate = result / amount
-                saveConversion(
-                    Conversion(
-                        fromCode = current.selectedFrom.code,
-                        fromName = current.selectedFrom.name,
-                        toCode = current.selectedTo.code,
-                        toName = current.selectedTo.name,
-                        amount = amount,
-                        rate = rate,
-                        result = result,
-                        timestamp = System.currentTimeMillis()
-                    )
-                )
+            val result = convertCurrency(amount, current.selectedFrom.code, current.selectedTo.code)
 
-                _state.update {
-                    it.copy(result = "%.2f".format(result), isLoading = false)
+            when (result) {
+                is Resource.Success -> {
+                    val value = result.data
+                    if (value is Double) {
+                        val rate = value / amount
+
+                        saveConversion(
+                            Conversion(
+                                fromCode = current.selectedFrom.code,
+                                fromName = current.selectedFrom.name,
+                                toCode = current.selectedTo.code,
+                                toName = current.selectedTo.name,
+                                amount = amount,
+                                rate = rate,
+                                result = value,
+                                timestamp = System.currentTimeMillis()
+                            )
+                        )
+
+                        updateState(
+                            current.copy(
+                                result = "%.2f".format(value),
+                                isFromCache = result.isFromCache
+                            )
+                        )
+                    } else {
+                        _state.value = CurrencyUiState.Error("Unexpected result type", ErrorType.GENERIC)
+                    }
                 }
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(error = e.message, isLoading = false)
+
+                is Resource.Error -> {
+                    _state.value = toCurrencyUiError(result.exception)
+                }
+
+                Resource.Loading -> {
+                    _state.value = CurrencyUiState.Loading
                 }
             }
         }
+    }
+
+
+    private fun updateState(data: CurrencyUiData) {
+        _state.value = CurrencyUiState.Success(data)
     }
 }

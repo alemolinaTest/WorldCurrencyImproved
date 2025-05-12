@@ -2,12 +2,26 @@ package com.amolina.worldcurrency.presentation.ui.state
 
 import com.amolina.worldcurrency.domain.model.Currency
 
-data class CurrencyUiState(
-    val isLoading: Boolean = false,
+sealed class CurrencyUiState {
+
+    object Loading : CurrencyUiState()
+
+    data class Success(
+        val data: CurrencyUiData
+    ) : CurrencyUiState()
+
+    data class Error(val message: String, val type: ErrorType = ErrorType.GENERIC) : CurrencyUiState()
+}
+
+enum class ErrorType {
+    NETWORK, SERVER, VALIDATION, GENERIC
+}
+
+data class CurrencyUiData(
     val availableCurrencies: List<Currency> = emptyList(),
     val selectedFrom: Currency? = null,
     val selectedTo: Currency? = null,
     val amount: String = "",
     val result: String = "",
-    val error: String? = null
+    val isFromCache: Boolean = false
 )

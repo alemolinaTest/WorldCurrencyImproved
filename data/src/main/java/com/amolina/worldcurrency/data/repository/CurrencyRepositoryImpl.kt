@@ -11,9 +11,9 @@ import com.amolina.worldcurrency.data.remote.api.ApiService
 import com.amolina.worldcurrency.domain.model.Conversion
 import com.amolina.worldcurrency.domain.model.Currency
 import com.amolina.worldcurrency.domain.repository.CurrencyRepository
+import com.amolina.worldcurrency.domain.util.Resource
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-
 
 class CurrencyRepositoryImpl(
     private val api: ApiService,
@@ -22,65 +22,84 @@ class CurrencyRepositoryImpl(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : CurrencyRepository {
 
-    override suspend fun getAvailableCurrencies(): List<Currency> = withContext(ioDispatcher) {
-        runCatching {
-            Log.d("CurrencyRepo", "Fetching currencies and rates...")
+    override suspend fun getAvailableCurrencies(): Resource<List<Currency>> =
+        withContext(ioDispatcher) {
+            val result = fetchAndCacheLatestRates()
 
-            // Fetch currencies and latest rates
-            val currenciesResponse = api.getCurrencies() // /list
-            val latestRates = api.getLatestRates()     // /live
+            val localCurrencies = dao.getAllRates().map { it.toDomain() }
 
-            val base = latestRates.source // "USD"
-
-            val entities = latestRates.quotes.mapNotNull { (pairCode, rate) ->
-                // removing the "USD" prefix
-                if (pairCode.startsWith(base)) {
-                    val code = pairCode.removePrefix(base)
-                    val name = currenciesResponse.currencies[code] ?: return@mapNotNull null
-                    CurrencyRateEntity(code = code, name = name, rate = rate)
-                } else null
+            return@withContext if (result.isSuccess) {
+                Resource.Success(localCurrencies, isFromCache = false)
+            } else {
+                result.exceptionOrNull()?.let {
+                    Log.e("CurrencyRepo", "Fallo al actualizar tasas", it)
+                }
+                Resource.Success(localCurrencies, isFromCache = true)
             }
-
-            dao.insertRates(entities)
-        }.onFailure {
-            Log.e("CurrencyRepo", "Failed to fetch remote data", it)
         }
 
-        return@withContext dao.getAllRates().map { it.toDomain() }
+    override suspend fun convert(amount: Double, from: String, to: String): Resource<Double> =
+        withContext(ioDispatcher) {
+            try {
+                require(amount > 0) { "El monto debe ser mayor a cero" }
+                require(from.isNotBlank() && to.isNotBlank()) { "Los códigos no pueden estar vacíos" }
+                require(from != to) { "Las monedas deben ser distintas" }
+
+                val localRates = dao.getAllRates()
+                val fromRate = localRates.find { it.code == from }?.rate
+                    ?: return@withContext Resource.Error(
+                        IllegalArgumentException("Moneda origen no encontrada"),
+                        isFromCache = false
+                    )
+
+                val toRate = localRates.find { it.code == to }?.rate
+                    ?: return@withContext Resource.Error(
+                        IllegalArgumentException("Moneda destino no encontrada"),
+                        isFromCache = false
+                    )
+
+                val result = fetchAndCacheLatestRates()
+                val finalResult = (amount / fromRate) * toRate
+
+                Resource.Success(finalResult, isFromCache = result.isFailure)
+
+            } catch (e: Exception) {
+                Log.e("CurrencyRepo", "Error en conversión", e)
+                Resource.Error(e)
+            }
+        }
+
+    override suspend fun saveConversion(entity: Conversion) =
+        conversionDao.insert(entity.toEntity())
+
+    override suspend fun getConversionHistory(): List<Conversion> =
+        conversionDao.getAll().map { it.toDomain() }
+
+    override suspend fun getConversionById(id: Long): Conversion =
+        conversionDao.getById(id).toDomain()
+
+    private suspend fun fetchAndCacheLatestRates(): Result<Unit> = runCatching {
+        Log.d("CurrencyRepo", "Fetching currencies and rates...")
+
+        val currenciesResponse = api.getCurrencies() // /list → devuelve Map<String, String>
+        val latestRates = api.getLatestRates() // /live → devuelve source y quotes
+
+        val base = latestRates.source ?: "USD"
+        val quotes = latestRates.quotes
+            ?: throw IllegalStateException("La API devolvió quotes vacíos")
+
+
+        val entities = quotes.mapNotNull { (pairCode, rate) ->
+            if (pairCode.startsWith(base)) {
+                val code = pairCode.removePrefix(base)
+                val name = currenciesResponse.currencies[code] ?: return@mapNotNull null
+                CurrencyRateEntity(code = code, name = name, rate = rate)
+            } else null
+        }
+
+        dao.insertRates(entities)
+    }.onFailure {
+        Log.e("CurrencyRepo", "Error al obtener datos remotos", it)
     }
 
-    override suspend fun convert(amount: Double, from: String, to: String): Double =
-        withContext(ioDispatcher) {
-            val localRates = dao.getAllRates()
-            val fromRate = localRates.find { it.code == from }?.rate ?: 1.0
-            val toRate = localRates.find { it.code == to }?.rate ?: 1.0
-
-            runCatching {
-                val currencies = api.getCurrencies().currencies
-                val rates = api.getLatestRates()
-
-                val base = rates.source
-
-                val entities = rates.quotes.mapNotNull { (pairCode, rate) ->
-                    if (pairCode.startsWith(base)) {
-                        val code = pairCode.removePrefix(base)
-                        val name = currencies[code] ?: return@mapNotNull null
-                        CurrencyRateEntity(code = code, name = name, rate = rate)
-                    } else null
-                }
-
-                dao.insertRates(entities)
-            }
-
-            return@withContext (amount / fromRate) * toRate
-        }
-
-    override suspend fun saveConversion(entity: Conversion) = conversionDao.insert(entity.toEntity())
-
-    override suspend fun getConversionHistory(): List<Conversion> = conversionDao.getAll().map { it.toDomain() }
-
-    override suspend fun getConversionById(id: Long): Conversion = conversionDao.getById(id).toDomain()
-
-    private fun CurrencyRateEntity.toDomain(): Currency =
-        Currency(code = code, name = name, rate = rate)
 }

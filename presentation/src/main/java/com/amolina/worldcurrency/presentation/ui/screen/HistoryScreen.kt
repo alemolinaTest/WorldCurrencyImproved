@@ -66,7 +66,7 @@ fun HistoryScreen(
                 }
             } else {
                 items(history) { conversion ->
-                    val formattedAmount = DecimalFormat("#,##0.##").format(conversion.amount)
+                    val formattedResult = DecimalFormat("#,##0.##").format(conversion.result)
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -75,8 +75,8 @@ fun HistoryScreen(
                             }
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("$formattedAmount ${conversion.fromCode} → ${conversion.toCode}")
-                            Text("Result: ${conversion.result}", style = MaterialTheme.typography.bodyMedium)
+                            Text(" ${conversion.fromCode} → ${conversion.toCode}")
+                            Text("Result: ${conversion.toCode} $formattedResult", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }

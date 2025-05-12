@@ -65,7 +65,7 @@ fun ConversionDetailScreen(
                 item { Text("To: ${c.toCode} - ${c.toName}") }
                 item { Text("Amount: $formattedAmount") }
                 item { Text("Rate: ${c.rate}") }
-                item { Text("Result: $formattedResult") }
+                item { Text("Result:  ${c.toName} : $formattedResult") }
                 item {
                     Text(
                         "Date: $date",
