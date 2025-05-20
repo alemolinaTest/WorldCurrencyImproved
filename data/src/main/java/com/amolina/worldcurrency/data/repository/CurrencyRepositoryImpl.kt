@@ -24,17 +24,15 @@ class CurrencyRepositoryImpl(
 
     override suspend fun getAvailableCurrencies(): Resource<List<Currency>> =
         withContext(ioDispatcher) {
-            val result = fetchAndCacheLatestRates()
+            try {
+                val result = fetchAndCacheLatestRates()
+                val localCurrencies = dao.getAllRates().map { it.toDomain() }
 
-            val localCurrencies = dao.getAllRates().map { it.toDomain() }
-
-            return@withContext if (result.isSuccess) {
-                Resource.Success(localCurrencies, isFromCache = false)
-            } else {
-                result.exceptionOrNull()?.let {
-                    Log.e("CurrencyRepo", "Fallo al actualizar tasas", it)
-                }
-                Resource.Success(localCurrencies, isFromCache = true)
+                Resource.Success(localCurrencies, isFromCache = result.isFailure)
+            } catch (e: Exception) {
+                Log.e("CurrencyRepo", "Fallo al actualizar tasas", e)
+                val message = mapErrorToMessage(e)
+                Resource.Error(Exception(message), isFromCache = true)
             }
         }
 
@@ -47,16 +45,9 @@ class CurrencyRepositoryImpl(
 
                 val localRates = dao.getAllRates()
                 val fromRate = localRates.find { it.code == from }?.rate
-                    ?: return@withContext Resource.Error(
-                        IllegalArgumentException("Moneda origen no encontrada"),
-                        isFromCache = false
-                    )
-
+                    ?: throw IllegalArgumentException("Moneda origen no encontrada")
                 val toRate = localRates.find { it.code == to }?.rate
-                    ?: return@withContext Resource.Error(
-                        IllegalArgumentException("Moneda destino no encontrada"),
-                        isFromCache = false
-                    )
+                    ?: throw IllegalArgumentException("Moneda destino no encontrada")
 
                 val result = fetchAndCacheLatestRates()
                 val finalResult = (amount / fromRate) * toRate
@@ -65,7 +56,8 @@ class CurrencyRepositoryImpl(
 
             } catch (e: Exception) {
                 Log.e("CurrencyRepo", "Error en conversión", e)
-                Resource.Error(e)
+                val message = mapErrorToMessage(e)
+                Resource.Error(Exception(message))
             }
         }
 
@@ -81,18 +73,27 @@ class CurrencyRepositoryImpl(
     private suspend fun fetchAndCacheLatestRates(): Result<Unit> = runCatching {
         Log.d("CurrencyRepo", "Fetching currencies and rates...")
 
-        val currenciesResponse = api.getCurrencies() // /list → devuelve Map<String, String>
-        val latestRates = api.getLatestRates() // /live → devuelve source y quotes
+        val currenciesResponse = api.getCurrencies()
+        if (!currenciesResponse.success) {
+            val msg = currenciesResponse.error?.info ?: "Error desconocido al obtener monedas"
+            throw ApiException(msg)
+        }
+        val currenciesMap = currenciesResponse.currencies
+            ?: throw ApiException("No se recibieron monedas desde la API")
 
+        val latestRates = api.getLatestRates()
+        if (!latestRates.success) {
+            val msg = latestRates.error?.info ?: "Error desconocido al obtener tasas"
+            throw ApiException(msg)
+        }
         val base = latestRates.source ?: "USD"
         val quotes = latestRates.quotes
-            ?: throw IllegalStateException("La API devolvió quotes vacíos")
-
+            ?: throw ApiException("No se recibieron tasas desde la API")
 
         val entities = quotes.mapNotNull { (pairCode, rate) ->
             if (pairCode.startsWith(base)) {
                 val code = pairCode.removePrefix(base)
-                val name = currenciesResponse.currencies[code] ?: return@mapNotNull null
+                val name = currenciesMap[code] ?: return@mapNotNull null
                 CurrencyRateEntity(code = code, name = name, rate = rate)
             } else null
         }
@@ -102,4 +103,14 @@ class CurrencyRepositoryImpl(
         Log.e("CurrencyRepo", "Error al obtener datos remotos", it)
     }
 
+    private fun mapErrorToMessage(e: Exception): String = when (e) {
+        is ApiException -> e.message ?: "Error de API"
+        is java.net.UnknownHostException -> "Sin conexión a Internet"
+        is kotlinx.serialization.SerializationException -> "Error al interpretar la respuesta del servidor"
+        is IllegalArgumentException -> e.message ?: "Datos inválidos"
+        else -> "Error inesperado: ${e.localizedMessage}"
+    }
 }
+
+class ApiException(message: String) : Exception(message)
+
